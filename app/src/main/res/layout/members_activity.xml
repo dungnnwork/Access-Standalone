@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+    <include layout="@layout/include_toolbar" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="65dp"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <EditText
+            android:id="@+id/search_field"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:drawableStart="@android:drawable/ic_menu_search"
+            android:hint="@string/search"
+            android:layout_weight="9"
+            android:padding="8dp"
+            android:imeOptions="actionDone"
+            android:background="@android:drawable/editbox_background_normal"
+            android:inputType="text" />
+
+        <!-- Icon -->
+        <ImageView
+            android:id="@+id/add_button"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:src="@drawable/add_user"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:scaleType="centerInside"
+            android:layout_gravity="center_vertical" />
+    </LinearLayout>
+
+    <ListView
+        android:id="@+id/face_list_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:divider="@android:color/darker_gray"
+        android:dividerHeight="1dp" />
+</LinearLayout>

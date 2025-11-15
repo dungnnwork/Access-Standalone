@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature android:name="android.hardware.nfc" android:required="true" />
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.BLUETOOTH"/>
+    <uses-permission android:name="android.permission.SERIAL_PORT"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <permission android:name="com.example.PERMISSION_WIEGAND"
+        android:protectionLevel="signature" />
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:requestLegacyExternalStorage="true"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Test_pro"
+        tools:targetApi="31">
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:grantUriPermissions="true"
+            android:exported="false">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths"/>
+        </provider>
+        <receiver android:name=".periodic.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".ui.home.HomeActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.face_identity.FaceIdentityActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.nfc.action.TECH_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.action.TECH_DISCOVERED"
+                android:resource="@xml/nfc_tech_filter" />
+        </activity>
+        <activity
+            android:name=".ui.result.ResultActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.verification_code.VerificationCodeActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.splash.MainTestActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.members.MembersActivity"
+            android:exported="false" >
+            <intent-filter>
+                 <action android:name="android.nfc.action.TECH_DISCOVERED" />
+                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                 android:name="android.nfc.action.TECH_DISCOVERED"
+                 android:resource="@xml/nfc_tech_filter" />
+        </activity>
+        <activity
+            android:name=".ui.company.CompanyActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.settings.SettingsActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.settings.activity_child.AboutActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.settings.activity_child.ChangePassActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.settings.activity_child.LogAppActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.login_with_key.LoginActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.login_with_key.LoginWithKeyActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.history.HistoryActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.add_new_employee.AddNewMemberActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.nfc.action.TECH_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.action.TECH_DISCOVERED"
+                android:resource="@xml/nfc_tech_filter" />
+        </activity>
+
+        <activity
+            android:name=".ui.register_new_face.RegisterNewFace"
+            android:exported="false" />
+        <activity
+            android:name=".ui.login_admin.LoginAdminActivity"
+            android:exported="false" />
+        <service
+            android:name=".camera.DualCameraService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="camera"
+            tools:ignore="ForegroundServicePermission" />
+    </application>
+
+</manifest>
