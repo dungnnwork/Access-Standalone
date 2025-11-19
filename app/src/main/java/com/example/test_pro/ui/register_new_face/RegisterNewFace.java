@@ -210,19 +210,31 @@ public class RegisterNewFace extends AppCompatActivity {
         frameLayout.addView(loadingOverlay);
 
         setContentView(frameLayout);
+        dualCameraPreviewManager = new DualCameraPreviewManager(RegisterNewFace.this, textureViewRGB, textureViewIR, new DualCameraPreviewManager.FrameCallback() {
+            @Override
+            public void onRgbFrame(byte[] nv21Data, int width, int height) {
+                onPreviewRGBFrame(nv21Data, width, height);
+            }
 
-        dualCameraPreviewManager = new DualCameraPreviewManager(
-                this,
-                textureViewRGB,
-                textureViewIR,
-                (cameraId, nv21Data, width, height) -> {
-                    if (ConstantString.CAMERA_BACK_ID.equals(cameraId)) {
-                        onPreviewRGBFrame(nv21Data, width, height);
-                    } else {
-                        onPreviewIrFrame(nv21Data, width, height);
-                    }
-                }
-        );
+            @Override
+            public void onIrFrame(byte[] nv21Data, int width, int height) {
+                onPreviewIrFrame(nv21Data, width, height);
+            }
+        }, 30L);
+
+///        dualCameraPreviewManager = new DualCameraPreviewManager(
+//                this,
+//                textureViewRGB,
+//                textureViewIR,
+//                (cameraId, nv21Data, width, height) -> {
+//                    if (ConstantString.CAMERA_BACK_ID.equals(cameraId)) {
+//                        onPreviewRGBFrame(nv21Data, width, height);
+//                    } else {
+//                        onPreviewIrFrame(nv21Data, width, height);
+//                    }
+//                },
+//                120
+///        );
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -274,6 +286,7 @@ public class RegisterNewFace extends AppCompatActivity {
             Log.i(TAG, "Start release ");
             if(dualCameraPreviewManager != null) {
                 dualCameraPreviewManager.stop();
+                dualCameraPreviewManager = null;
                 Log.i(TAG, "Start release success");
                 return;
             }

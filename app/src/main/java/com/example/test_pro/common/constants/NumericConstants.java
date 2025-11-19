@@ -6,7 +6,7 @@ public class NumericConstants {
     public static final int FACE_WITH_BOUNDARY = 0;
     public static final int MAX_FACE_COUNT = 1;
     public static final int START_COUNT = 1;
-    public static final int MAX_IMAGES = 2;
+    public static final int MAX_IMAGES = 1;
     public static final int MAX_SECONDS_EMPTY_FACE = 3;
     public static final int DETECT_FACE_MAX_NUM = 5;
     public static final int PERCENT_RAM_REBOOT = 60;
@@ -19,6 +19,7 @@ public class NumericConstants {
     public static final int HEIGHT_720 = 720;
     public static final int HEIGHT_1080 = 1080;
     public static final int WIDTH_720 = 720;
+    public static final int WIDTH_640 = 640;
     public static final int HEIGHT_480 = 480;
     private NumericConstants() {
     }

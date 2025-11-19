@@ -3,7 +3,6 @@ package com.example.test_pro.ui.settings.activity_child;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.media.Image;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -26,6 +25,7 @@ import com.example.test_pro.ultis.SizeUtils;
 
 public class AboutActivity extends AppCompatActivity {
     private StorageModel storageModel;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -160,8 +160,6 @@ public class AboutActivity extends AppCompatActivity {
         rootLayout.addView(horiLayout);
         return rootLayout;
     }
-
-
     @NonNull
     private CardView cardInfoDevice(int iconRes, String title, String value) {
         CardView cardView = new CardView(this);
@@ -235,7 +233,7 @@ public class AboutActivity extends AppCompatActivity {
         rootLayout.setGravity(Gravity.CENTER_HORIZONTAL);
 
         TextView title = new TextView(this);
-        title.setText(getText(R.string.application));
+        title.setText(getText(R.string.information));
         title.setTextSize(32);
         title.setTypeface(null, Typeface.BOLD);
         title.setTextColor(Color.BLACK);
@@ -254,9 +252,9 @@ public class AboutActivity extends AppCompatActivity {
         );
         int margin = 15;
 
-        LinearLayout lineFirst = infoApp(R.drawable.outline_apps_24, "App", DeviceUtil.getAppName(this));
-        LinearLayout lineSecond = infoApp(R.drawable.outline_android_24, getString(R.string.version), DeviceUtil.getAppVersion(this));
-        LinearLayout lineThird = infoApp(R.drawable.outline_update_24, getString(R.string.updated), DeviceUtil.getBuildTime());
+        LinearLayout lineFirst = infoApp(R.drawable.baseline_apps_24, getString(R.string.application), DeviceUtil.getAppName(this));
+        LinearLayout lineSecond = infoApp(R.drawable.baseline_android_24, getString(R.string.version), DeviceUtil.getAppVersion(this));
+        LinearLayout lineThird = infoApp(R.drawable.baseline_update_24, getString(R.string.updated), DeviceUtil.getBuildTime());
 
         LinearLayout.LayoutParams lpFirst = new LinearLayout.LayoutParams(spaceParam);
         lpFirst.setMargins(0, 0, margin, 0);

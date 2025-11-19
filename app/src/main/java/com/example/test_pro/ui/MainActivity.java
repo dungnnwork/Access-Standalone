@@ -25,7 +25,6 @@ import com.example.test_pro.data.shared_preferences.SharedPreferencesStorage;
 import com.example.test_pro.model.database.LogAppModel;
 import com.example.test_pro.ui.face_identity.FaceIdentityActivity;
 import com.example.test_pro.ultis.DatetimeUtil;
-import com.example.test_pro.ultis.RootSystemUtil;
 import com.example.test_pro.ultis.SizeUtils;
 import com.example.test_pro.ultis.SystemUIController;
 import com.example.test_pro.ultis.ToastUtil;
@@ -47,7 +46,6 @@ public class MainActivity extends AppCompatActivity {
         db = DatabaseLocal.getInstance(this);
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
             db.insertLogApp(new LogAppModel(UUID.randomUUID().toString(), "CRASH_APP_MAIN", Log.getStackTraceString(throwable), DatetimeUtil.nowToString()));
-            RootSystemUtil.rebootDeviceIfRooted();
             unInitEngine();
             Log.e(TAG, "ExceptionHandler :" + " " + throwable.getMessage());
         });

@@ -1,7 +1,6 @@
 package com.example.test_pro.ui.face_identity;
 
 import android.app.PendingIntent;
-import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
@@ -9,7 +8,6 @@ import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.Rect;
 import android.graphics.Typeface;
-import android.hardware.Camera;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
 import android.os.Bundle;
@@ -43,10 +41,7 @@ import com.arcsoft.face.ImageQualitySimilar;
 import com.arcsoft.face.LivenessInfo;
 import com.arcsoft.face.MaskInfo;
 import com.arcsoft.face.enums.ExtractType;
-import com.common.pos.api.util.PosUtil;
 import com.example.test_pro.R;
-import com.example.test_pro.camera.CameraListener;
-import com.example.test_pro.camera.CameraPreview;
 import com.example.test_pro.camera.DualCameraPreviewManager;
 import com.example.test_pro.common.constants.ConstantString;
 import com.example.test_pro.common.constants.NumericConstants;
@@ -58,7 +53,6 @@ import com.example.test_pro.model.database.EventAuthModel;
 import com.example.test_pro.model.database.LogAppModel;
 import com.example.test_pro.model.database.MemberModel;
 import com.example.test_pro.model.config.PassAdminModel;
-import com.example.test_pro.ui.component.FaceDetectionOverlay;
 import com.example.test_pro.ui.login_admin.LoginAdminActivity;
 import com.example.test_pro.ultis.ColorsUtil;
 import com.example.test_pro.ultis.ConvertByteToImage;
@@ -69,7 +63,6 @@ import com.example.test_pro.ultis.FaceUtil;
 import com.example.test_pro.ultis.FunctionUtil;
 import com.example.test_pro.ultis.RectHeadImageUtils;
 import com.example.test_pro.model.database.FaceFeatureModel;
-import com.example.test_pro.ultis.RootSystemUtil;
 import com.example.test_pro.ultis.SizeUtils;
 import com.example.test_pro.ultis.SoundHelper;
 import com.example.test_pro.ultis.TTSHelper;
@@ -91,14 +84,10 @@ import android.os.Environment;
 
 
 public class FaceIdentityActivity extends AppCompatActivity {
-    private CameraListener cameraListenerRGB;
     private LivenessInfo livenessInfo = new LivenessInfo();
-    private CameraListener cameraListenerIr;
     private final AtomicBoolean isStop = new AtomicBoolean(false);
     private final AtomicBoolean hasSavedImage = new AtomicBoolean(false);
     private TextView txtStatus;
-    private CameraPreview preview;
-    private CameraPreview previewIr;
     private volatile boolean cameraReleased = false;
     private DatabaseLocal db;
     private TextView txtName, txtPosition, txtMemberCode;
@@ -111,7 +100,6 @@ public class FaceIdentityActivity extends AppCompatActivity {
     private FrameLayout layoutInfoPanel;
     private boolean isInfoShowing = false;
     private DualCameraPreviewManager dualCameraPreviewManager;
-    private final boolean isDualCamera = true;
     private FrameLayout loadingOverlay;
     private NfcAdapter nfcAdapter;
     private PendingIntent pendingIntent;
@@ -119,22 +107,87 @@ public class FaceIdentityActivity extends AppCompatActivity {
     private Runnable showLogoRunnable;
     private boolean isFaceDetected = false;
     private TextureView textureViewRGB, textureViewIR;
-//    private FaceDetectionOverlay faceOverlay;
     private boolean isPersonAlive = false;
-    private final Handler ramHandler = new Handler();
-    private final Runnable ramRunnable = new Runnable() {
-        @Override
-        public void run() {
-            Context contextVal = FaceIdentityActivity.this;
-            int ramPercent = DeviceUtil.getRamUsedPercent(contextVal);
-            if (ramPercent >= NumericConstants.PERCENT_RAM_REBOOT) {
-                RootSystemUtil.rebootDeviceIfRooted();
-            }
-            ramHandler.postDelayed(this, 2000);
-        }
-    };
+    private TextView statusText;
     private final ExecutorService doorExecutor = Executors.newSingleThreadExecutor();
     private final long DELAY = 5000;
+    private final ExecutorService recognitionExecutor = Executors.newSingleThreadExecutor();
+    private float tempCpu = 0f;
+    private final long RESTART_INTERVAL_MS = 60 * 60 * 1000L;
+//    private final long RESTART_INTERVAL_MS = 2 * 60 * 1000L;
+    private final long PROCESS_CAMERA_MS = 30L;
+    private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
+    private final Handler countdownHandler = new Handler(Looper.getMainLooper());
+    private Runnable countdownRunnable;
+    private int countdownSeconds = 20;
+
+    private void startCountdown() {
+        cancelCountdown();
+
+        countdownSeconds = 20;
+        countdownRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (countdownSeconds <= 0) {
+                    statusText.setText(getText(R.string.restart_camera));
+                    return;
+                }
+                String text = getString(R.string.restart_camera) + " " + countdownSeconds + "s";
+                statusText.setText(text);
+                countdownSeconds--;
+
+                countdownHandler.postDelayed(this, 1000);
+            }
+        };
+
+        statusText.setVisibility(View.VISIBLE);
+        countdownHandler.post(countdownRunnable);
+    }
+
+    private final Runnable watchdogRunnable = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                Log.i(TAG, "Watchdog restarting cameras to avoid leaks");
+                releaseCamera();
+                runOnUiThread(() -> startCountdown());
+
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    dualCameraPreviewManager = new DualCameraPreviewManager(FaceIdentityActivity.this, textureViewRGB, textureViewIR, new DualCameraPreviewManager.FrameCallback() {
+                        @Override
+                        public void onRgbFrame(byte[] nv21Data, int width, int height) {
+                            onPreviewRGBFrame(nv21Data, width, height);
+                        }
+
+                        @Override
+                        public void onIrFrame(byte[] nv21Data, int width, int height) {
+                            onPreviewIrFrame(nv21Data, width, height);
+                        }
+                    }, PROCESS_CAMERA_MS);
+
+///                    dualCameraPreviewManager = new DualCameraPreviewManager(
+//                            FaceIdentityActivity.this,
+//                            textureViewRGB,
+//                            textureViewIR,
+//                            (cameraId, nv21Data, width, height) -> {
+//                                if (ConstantString.CAMERA_BACK_ID.equals(cameraId)) {
+//                                    onPreviewRGBFrame(nv21Data, width, height);
+//                                } else {
+//                                    onPreviewIrFrame(nv21Data, width, height);
+//                                }
+//                            },
+//                            100
+///                    );
+                    dualCameraPreviewManager.start();
+                    runOnUiThread(() -> cancelCountdown());
+                }, 20000);
+            } catch (Exception e) {
+                Log.e(TAG, "Watchdog restart failed", e);
+            } finally {
+                watchdogHandler.postDelayed(this, RESTART_INTERVAL_MS);
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -146,18 +199,22 @@ public class FaceIdentityActivity extends AppCompatActivity {
                 new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_MUTABLE
         );
-        if (!isDualCamera) {
-            initCameraListener();
-        }
+
         showFaceRecognitionUI();
 
+    }
+
+    private void cancelCountdown() {
+        if (countdownRunnable != null) {
+            countdownHandler.removeCallbacks(countdownRunnable);
+            countdownRunnable = null;
+        }
+        statusText.setVisibility(View.GONE);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        PosUtil.setLedLight(0);
-        ramHandler.post(ramRunnable);
         if (nfcAdapter == null) {
             Log.i(TAG, "NFC not supported");
             DialogUtil.showResultDialog(R.drawable.failed, getString(R.string.not_supported_nfc), this, false, null);
@@ -175,24 +232,38 @@ public class FaceIdentityActivity extends AppCompatActivity {
             };
             nfcAdapter.enableForegroundDispatch(this, pendingIntent, intentFiltersArray, techListsArray);
         }
-        dualCameraPreviewManager = new DualCameraPreviewManager(
-                this,
-                textureViewRGB,
-                textureViewIR,
-                (cameraId, nv21Data, width, height) -> {
-                    if (ConstantString.CAMERA_BACK_ID.equals(cameraId)) {
-                        onPreviewRGBFrame(nv21Data, width, height);
-                    } else {
-                        onPreviewIrFrame(nv21Data, width, height);
-                    }
-                }
-        );
+        dualCameraPreviewManager = new DualCameraPreviewManager(FaceIdentityActivity.this, textureViewRGB, textureViewIR, new DualCameraPreviewManager.FrameCallback() {
+            @Override
+            public void onRgbFrame(byte[] nv21Data, int width, int height) {
+                onPreviewRGBFrame(nv21Data, width, height);
+            }
+
+            @Override
+            public void onIrFrame(byte[] nv21Data, int width, int height) {
+                onPreviewIrFrame(nv21Data, width, height);
+            }
+        }, PROCESS_CAMERA_MS);
+///        dualCameraPreviewManager = new DualCameraPreviewManager(
+//                this,
+//                textureViewRGB,
+//                textureViewIR,
+//                (cameraId, nv21Data, width, height) -> {
+//                    if (ConstantString.CAMERA_BACK_ID.equals(cameraId)) {
+//                        onPreviewRGBFrame(nv21Data, width, height);
+//                    } else {
+//                        onPreviewIrFrame(nv21Data, width, height);
+//                    }
+//                },
+//                100
+//        );
         dualCameraPreviewManager.start();
         loadingOverlay.animate()
                 .alpha(0f)
                 .setDuration(800)
                 .withEndAction(() -> loadingOverlay.setVisibility(View.GONE));
         TTSHelper.init(this);
+        watchdogHandler.removeCallbacks(watchdogRunnable);
+        watchdogHandler.postDelayed(watchdogRunnable, RESTART_INTERVAL_MS);
     }
 
     @Override
@@ -204,7 +275,7 @@ public class FaceIdentityActivity extends AppCompatActivity {
                 byte[] tagId = tag.getId();
                 String hexId = FunctionUtil.bytesToHex(tagId);
                 MemberModel memberModel = db.getMemberByIdentityCard(hexId);
-                Log.i(TAG, "Model + hex " + " " + memberModel + hexId);
+                Log.i(TAG, "Model hex " + " " + memberModel + hexId);
                 updateText(ConstantString.EMPTY);
                 if (memberModel == null) {
                     SoundHelper.playSound(this, SoundHelper.EmSound.AUTH_FAILED_STRANGER);
@@ -241,7 +312,9 @@ public class FaceIdentityActivity extends AppCompatActivity {
         if (nfcAdapter != null) {
             nfcAdapter.disableForegroundDispatch(this);
         }
+        watchdogHandler.removeCallbacks(watchdogRunnable);
         releaseCamera();
+        cancelCountdown();
     }
 
     @Override
@@ -257,75 +330,32 @@ public class FaceIdentityActivity extends AppCompatActivity {
         Log.i(TAG, "onDestroy called, ...");
         doorExecutor.shutdownNow();
         setShutDownTTS();
+        recognitionExecutor.shutdownNow();
         releaseCamera();
-        if (ramHandler != null) {
-            ramHandler.removeCallbacks(ramRunnable);
-        }
+        cancelCountdown();
     }
-
     private void setShutDownTTS() {
         TTSHelper.shutdown();
     }
-
     private void releaseCamera() {
-        if (cameraReleased) return;
-        cameraReleased = true;
+        try {
+            if (cameraReleased) return;
+            cameraReleased = true;
 
-        if (isDualCamera && dualCameraPreviewManager != null) {
-            cameraReleased = false;
-            dualCameraPreviewManager.stop();
-            dualCameraPreviewManager = null;
-            Log.d(TAG, "releaseCamera() called, cameraReleased=" + cameraReleased);
-        } else {
-            try {
-                if (previewIr != null) {
-                    previewIr.releaseCamera();
-                    previewIr = null;
-                }
-                if (preview != null) {
-                    preview.releaseCamera();
-                    preview = null;
-                }
-                Log.i(TAG, "Both cameras released (UI thread)");
-            } catch (Exception e) {
-                Log.e(TAG, "Exception", e);
+            if (dualCameraPreviewManager != null) {
+                dualCameraPreviewManager.stop();
+                dualCameraPreviewManager = null;
+                Log.d(TAG, "releaseCamera() called, cameraReleased=" + cameraReleased);
             }
+        } catch (Exception e) {
+            cameraReleased = false;
+            Log.d(TAG, "Exception" + e);
         }
-    }
-
-    private void initCameraListener() {
-        initRGBCameraListener();
-        initIRCameraListener();
-    }
-
-    private void setupCameraAsyncFaceID(@NonNull FrameLayout rootLayout) {
-        previewIr = new CameraPreview(this, 1, cameraListenerIr);
-        preview = new CameraPreview(this, 0, cameraListenerRGB);
-        FaceDetectionOverlay faceOverlay = new FaceDetectionOverlay(this);
-        txtStatus = new TextView(this);
-
-        txtStatus.setTextSize(20);
-        txtStatus.setTextColor(Color.WHITE);
-        txtStatus.setGravity(Gravity.CENTER);
-
-        FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-        );
-        textParams.gravity = Gravity.TOP;
-        textParams.topMargin = SizeUtils.getHeightPercent(0.1f);
-
-        rootLayout.addView(previewIr);
-        rootLayout.addView(preview);
-        rootLayout.addView(faceOverlay);
-        rootLayout.addView(txtStatus, textParams);
     }
 
     private void updateText(String message) {
         runOnUiThread(() -> txtStatus.setText(message));
-
     }
-
     private void setupDualCameraLayout(@NonNull FrameLayout frameLayout) {
         frameLayout.setBackgroundColor(Color.BLACK);
         textureViewIR = new TextureView(this);
@@ -340,7 +370,6 @@ public class FaceIdentityActivity extends AppCompatActivity {
         );
         textureViewRGB.setLayoutParams(rgbParams);
 
-//        faceOverlay = new FaceDetectionOverlay(this);
 
         txtStatus = new TextView(this);
         txtStatus.setTextSize(20);
@@ -356,7 +385,6 @@ public class FaceIdentityActivity extends AppCompatActivity {
 
         frameLayout.addView(textureViewIR);
         frameLayout.addView(textureViewRGB);
-//        frameLayout.addView(faceOverlay);
         frameLayout.addView(txtStatus, textParams);
 
         loadingOverlay = new FrameLayout(this);
@@ -381,13 +409,7 @@ public class FaceIdentityActivity extends AppCompatActivity {
         int SIZE_32 = SizeUtils.dpToPx(this, 32);
         int SIZE_150 = SizeUtils.dpToPx(this, 150);
         FrameLayout rootLayout = new FrameLayout(this);
-
-        // Camera preview
-        if (!isDualCamera) {
-            setupCameraAsyncFaceID(rootLayout);
-        } else {
-            setupDualCameraLayout(rootLayout);
-        }
+        setupDualCameraLayout(rootLayout);
         //
         resultPanel = new LinearLayout(this);
         resultPanel.setOrientation(LinearLayout.HORIZONTAL);
@@ -444,20 +466,21 @@ public class FaceIdentityActivity extends AppCompatActivity {
         imgLogo.setLayoutParams(logoParams);
 
         //
-        TextView txtRamUsed = new TextView(this);
-        txtRamUsed.setTextColor(Color.GRAY);
-        txtRamUsed.setTypeface(Typeface.DEFAULT_BOLD);
-        txtRamUsed.setTextSize(20);
-        txtRamUsed.setGravity(Gravity.END | Gravity.BOTTOM);
-        FrameLayout.LayoutParams ramUsedParams = new FrameLayout.LayoutParams(
+        //    private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
+        statusText = new TextView(this);
+        statusText.setTextColor(ColorsUtil.TEXT_GRAY);
+        statusText.setTypeface(Typeface.DEFAULT_BOLD);
+        statusText.setTextSize(20);
+        statusText.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
         );
-        ramUsedParams.gravity = Gravity.BOTTOM | Gravity.END;
-        txtRamUsed.setLayoutParams(ramUsedParams);
+        statusParams.gravity = Gravity.CENTER;
+        statusText.setLayoutParams(statusParams);
 
 ///        logoLayout.addView(imgLogo);
-///        logoLayout.addView(txtRamUsed);
+        logoLayout.addView(statusText);
 
         FrameLayout.LayoutParams overlayParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -495,12 +518,16 @@ public class FaceIdentityActivity extends AppCompatActivity {
                 () -> {
                     EventAuthModel eventAuthModel = new EventAuthModel(UUID.randomUUID().toString(), userID, name, NumericConstants.RESULT_SUCCESS, filePath, AuthMethod.FACE, DatetimeUtil.nowToString());
                     db.insertEventAuth(eventAuthModel);
+                    tempCpu = DeviceUtil.getCpuTemperature();
+                    String ramStr = DeviceUtil.getRamUsed(this);
                     if (isInfoShowing) return;
                     isInfoShowing = true;
                     TTSHelper.speak(name);
                     txtName.setText(name);
                     txtPosition.setText(position);
-                    txtMemberCode.setText(memberCode);
+//                    txtMemberCode.setText(memberCode);
+                    String memberCodeAndCpu = memberCode + " - " + ramStr + " (" + tempCpu + " °C)";
+                    txtMemberCode.setText(memberCodeAndCpu);
                     Bitmap bitmap = ConvertByteToImage.imgDataGet(filePath, this);
                     if (bitmap != null) {
                         imgSmallAvatar.setImageBitmap(bitmap);
@@ -549,7 +576,7 @@ public class FaceIdentityActivity extends AppCompatActivity {
         content.setGravity(Gravity.CENTER_HORIZONTAL);
         content.setPadding(SIZE_30, SIZE_40, SIZE_30, SIZE_40);
 
-        // Avatar tròn
+        // Avatar
         int photoSize = SizeUtils.dpToPx(this, 240);
         imgSmallAvatar = new ImageView(this);
         imgSmallAvatar.setLayoutParams(new LinearLayout.LayoutParams(photoSize, photoSize));
@@ -624,26 +651,8 @@ public class FaceIdentityActivity extends AppCompatActivity {
         layoutInfoPanel.addView(card);
     }
 
-
-    @SuppressWarnings("deprecation")
-    private void initRGBCameraListener() {
-        cameraListenerRGB = new CameraListener() {
-            @Override
-            public void onPreview(final byte[] nv21, Camera camera) {
-                onPreviewRGBFrame(nv21, CameraPreview.width, CameraPreview.height);
-            }
-
-            @Override
-            public void onCameraError(Exception e) {
-                String text = getString(R.string.open_failed_camera) + " " + ConstantString.CAMERA_FRONT_ID;
-                updateText(text);
-                Log.i(TAG, "onCameraErrorRGB: ", e);
-            }
-
-        };
-    }
-
     public void onPreviewRGBFrame(byte[] rgbNv21, int width, int height) {
+
         if (!isPersonAlive) return;
         try {
             if (isStop.get() || hasSavedImage.get()) return;
@@ -665,11 +674,7 @@ public class FaceIdentityActivity extends AppCompatActivity {
 
                     showLogoRunnable = () -> {
                         if (!isFaceDetected) {
-                            if (isDualCamera) {
-                                runOnUiThread(() -> logoOverlayLayout.setVisibility(View.VISIBLE));
-                            } else {
-                                logoOverlayLayout.setVisibility(View.VISIBLE);
-                            }
+                            runOnUiThread(() -> logoOverlayLayout.setVisibility(View.VISIBLE));
                         }
                     };
                     faceHandler.postDelayed(showLogoRunnable, 3000);
@@ -680,11 +685,7 @@ public class FaceIdentityActivity extends AppCompatActivity {
             updateText(getString(R.string.verifying));
             isFaceDetected = true;
             faceHandler.removeCallbacks(showLogoRunnable);
-            if (isDualCamera) {
-                runOnUiThread(() -> logoOverlayLayout.setVisibility(View.GONE));
-            } else {
-                logoOverlayLayout.setVisibility(View.GONE);
-            }
+            runOnUiThread(() -> logoOverlayLayout.setVisibility(View.GONE));
 
             if (faceInfoList.size() > NumericConstants.MAX_FACE_COUNT) {
                 String text = getString(R.string.multiple_people_in_recognition);
@@ -766,13 +767,13 @@ public class FaceIdentityActivity extends AppCompatActivity {
                 return;
             }
             isStop.set(true);
-            recognize(faceRecognize, rgbNv21, faceInfo, width, height);
+            recognitionExecutor.submit(() -> recognize(faceRecognize, rgbNv21, faceInfo, width, height));
+
+//            recognize(faceRecognize, rgbNv21, faceInfo, width, height);
         } catch (
                 Exception e) {
             db.insertLogApp(new LogAppModel(UUID.randomUUID().toString(), "onPreviewRGBFrame_face_identity_act", e.toString(), DatetimeUtil.nowToString()));
-            if (!isDualCamera) {
-                ToastUtil.show(this, getString(R.string.an_error_try_again));
-            }
+            updateText(getString(R.string.an_error_try_again));
             Log.i(TAG, "onCameraError onPreviewRGBFrame : " + " " + e);
         }
     }
@@ -874,23 +875,6 @@ public class FaceIdentityActivity extends AppCompatActivity {
 
     }
 
-    @SuppressWarnings("deprecation")
-    private void initIRCameraListener() {
-        cameraListenerIr = new CameraListener() {
-            @Override
-            public void onPreview(final byte[] nv21, Camera camera) {
-                onPreviewIrFrame(nv21, CameraPreview.width, CameraPreview.height);
-            }
-
-            @Override
-            public void onCameraError(Exception e) {
-                String text = getString(R.string.open_failed_camera) + " " + ConstantString.CAMERA_BACK_ID;
-                updateText(text);
-                Log.i(TAG, "onCameraErrorIR: ", e);
-            }
-
-        };
-    }
     private void openDoorWithTimeout(Runnable onFail, Runnable onSuccess) {
         doorExecutor.execute(() -> {
             try {
@@ -941,16 +925,14 @@ public class FaceIdentityActivity extends AppCompatActivity {
     private void showRgbView() {
         if (textureViewRGB != null) {
             setScreenBrightness(0.9f);
-//            faceOverlay.setVisibility(View.VISIBLE);
-            textureViewRGB.setVisibility(View.VISIBLE);
+            runOnUiThread(() -> textureViewRGB.setVisibility(View.VISIBLE));
         }
     }
 
     private void hideRgbView() {
         if (textureViewRGB != null) {
             setScreenBrightness(0.1f);
-//            faceOverlay.setVisibility(View.GONE);
-            textureViewRGB.setVisibility(View.GONE);
+            runOnUiThread(() -> textureViewRGB.setVisibility(View.GONE));
         }
     }
 
@@ -970,4 +952,5 @@ public class FaceIdentityActivity extends AppCompatActivity {
         });
     }
 }
+
 

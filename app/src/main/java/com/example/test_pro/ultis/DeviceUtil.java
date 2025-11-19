@@ -15,6 +15,9 @@ import com.example.test_pro.R;
 import com.example.test_pro.data.shared_preferences.SharedPreferencesStorage;
 import com.example.test_pro.model.config.StorageModel;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
@@ -25,6 +28,7 @@ import com.example.test_pro.BuildConfig;
 
 
 public class DeviceUtil {
+    private static final String TAG = "DEVICE_UTIL";
     @SuppressLint("WrongConstant")
     public static void getStorageInfo(@NonNull Context context) {
         long totalBytes = 0;
@@ -75,6 +79,33 @@ public class DeviceUtil {
         }
     }
 
+    public static float getCpuTemperature() {
+        try {
+            String[] thermalFiles = {
+                    "/sys/class/thermal/thermal_zone0/temp",
+                    "/sys/class/thermal/thermal_zone1/temp",
+                    "/sys/class/thermal/thermal_zone2/temp"
+            };
+            for (String path : thermalFiles) {
+                File file = new File(path);
+                if (file.exists()) {
+                    BufferedReader br = new BufferedReader(new FileReader(file));
+                    String line = br.readLine();
+                    br.close();
+                    if (line != null) {
+                        float temp = Float.parseFloat(line);
+                        if (temp > 1000) temp /= 1000;
+                        return temp;
+                    }
+                }
+            }
+        } catch (Exception e) {
+           Log.i(TAG, "Exception_getCpuTemperature " + e);
+        }
+        return -1;
+    }
+
+
     @NonNull
     public static String getBuildTime() {
         long buildTimeMillis = BuildConfig.BUILD_TIME;
@@ -96,28 +127,10 @@ public class DeviceUtil {
         long usedMem = (mi.totalMem - mi.availMem) / (1024 * 1024);
         long percentUsed = (usedMem * 100) / totalMem;
 
-        return usedMem + " / " + totalMem + " MB (" + percentUsed + "%)";
+        return "RAM" + " " + percentUsed + "%";
+
+//        return usedMem + " / " + totalMem + " MB (" + percentUsed + "%)";
     }
-
-    public static int getRamUsedPercent(@NonNull Context context) {
-        ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-        if (activityManager == null) {
-            return -1;
-        }
-
-        ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
-        activityManager.getMemoryInfo(mi);
-
-        long totalMem = mi.totalMem;
-        long usedMem = mi.totalMem - mi.availMem;
-
-        if (totalMem == 0) {
-            return -1;
-        }
-
-        return (int) ((usedMem * 100) / totalMem);
-    }
-
 
     @NonNull
     public static String getAppName(@NonNull Context context) {

@@ -128,4 +128,5 @@
     <string name="log_sub">Ghi lại và theo dõi hoạt động của ứng dụng</string>
     <string name="login_successful">Đăng nhập thành công</string>
     <string name="login_failed">Đăng nhập thất bại</string>
+    <string name="restart_camera">Đang khởi động lại camera\nVui lòng chờ</string>
 </resources>
