@@ -66,6 +66,9 @@ public class DualCameraPreviewManager {
     private final long irStopDelayMs = 5000L;
     private long lastPersonDetectedTime = 0L;
     private final AtomicBoolean personDetected = new AtomicBoolean(false);
+    private byte[] rgbNv21Buffer;
+    private byte[] irNv21Buffer;
+
 
     public DualCameraPreviewManager(@NonNull Context context, TextureView tvRGB, TextureView tvIR, FrameCallback callback, long processIntervalMs) {
         this.context = context;
@@ -110,7 +113,8 @@ public class DualCameraPreviewManager {
                 imageReader.setOnImageAvailableListener(null, null);
                 imageReader.close();
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     public void stop() {
@@ -122,33 +126,36 @@ public class DualCameraPreviewManager {
         stopBackgroundThread();
     }
 
-///    public void stop() {
-//        try {
-//            if (cameraDeviceRGB != null) {
-//                cameraDeviceRGB.close();
-//                cameraDeviceRGB = null;
-//            }
-//            if (cameraDeviceIR != null) {
-//                cameraDeviceIR.close();
-//                cameraDeviceIR = null;
-//            }
-//        } catch (Exception ignored) {
-//        }
-//
-//        try {
-//            if (imageReaderRGB != null) {
-//                imageReaderRGB.close();
-//                imageReaderRGB = null;
-//            }
-//            if (imageReaderIR != null) {
-//                imageReaderIR.close();
-//                imageReaderIR = null;
-//            }
-//        } catch (Exception ignored) {
-//        }
-//
-//        stopBackgroundThread();
-///    }
+    /**
+    public void stop() {
+        try {
+            if (cameraDeviceRGB != null) {
+                cameraDeviceRGB.close();
+                cameraDeviceRGB = null;
+            }
+            if (cameraDeviceIR != null) {
+                cameraDeviceIR.close();
+                cameraDeviceIR = null;
+            }
+        } catch (Exception ignored) {
+        }
+
+        try {
+            if (imageReaderRGB != null) {
+                imageReaderRGB.close();
+                imageReaderRGB = null;
+            }
+            if (imageReaderIR != null) {
+                imageReaderIR.close();
+                imageReaderIR = null;
+            }
+        } catch (Exception ignored) {
+        }
+
+        stopBackgroundThread();
+
+    }
+    */
 
     public void stopIrPreview() {
         closeCameraSafely(cameraDeviceIR, imageReaderIR);
@@ -158,22 +165,23 @@ public class DualCameraPreviewManager {
         personDetected.set(false);
     }
 
-///    public void stopIrPreview() {
-//        try {
-//            if (cameraDeviceIR != null) {
-//                cameraDeviceIR.close();
-//                cameraDeviceIR = null;
-//            }
-//            if (imageReaderIR != null) {
-//                imageReaderIR.close();
-//                imageReaderIR = null;
-//            }
-//            isIrStarted.set(false);
-//            personDetected.set(false);
-//        } catch (Exception ignored) {
-//        }
-//    }
-
+    /**
+     * public void stopIrPreview() {
+     * try {
+     * if (cameraDeviceIR != null) {
+     * cameraDeviceIR.close();
+     * cameraDeviceIR = null;
+     * }
+     * if (imageReaderIR != null) {
+     * imageReaderIR.close();
+     * imageReaderIR = null;
+     * }
+     * isIrStarted.set(false);
+     * personDetected.set(false);
+     * } catch (Exception ignored) {
+     * }
+     * }
+     */
 
     private void setupTextureListener(@NonNull TextureView textureView, String cameraId, boolean isRgb) {
         if (textureView.isAvailable()) {
@@ -268,16 +276,28 @@ public class DualCameraPreviewManager {
                     image = reader.acquireLatestImage();
                     if (image == null) return;
 
+
                     long now = System.currentTimeMillis();
                     if (now - lastProcessTimeRGB < processIntervalMs) return;
                     lastProcessTimeRGB = now;
+                    Image.Plane[] planes = image.getPlanes();
+                    int width = image.getWidth();
+                    int height = image.getHeight();
 
-                    byte[] nv21 = convertImageToNv21(image);
+                    int ySize = planes[0].getRowStride() * height;
+                    int uvSize = planes[1].getRowStride() * (height / 2);
+                    int needed = ySize + uvSize;
+
+//                    byte[] nv21 = convertImageToNv21(image);
                     if (frameCallback != null) {
                         if (isRgb) {
-                            frameCallback.onRgbFrame(nv21, image.getWidth(), image.getHeight());
+                            if (rgbNv21Buffer == null || rgbNv21Buffer.length < needed) {
+                                rgbNv21Buffer = new byte[needed];
+                            }
+                            convertToNV21(image, rgbNv21Buffer);
+                            frameCallback.onRgbFrame(rgbNv21Buffer, width, height);
 
-                            boolean detected = detectFaceRGB(nv21, image.getWidth(), image.getHeight());
+                            boolean detected = detectFaceRGB(rgbNv21Buffer, width, height);
                             Log.d(TAG, "Detected :" + detected);
                             long nowTime = System.currentTimeMillis();
                             if (detected) {
@@ -292,7 +312,11 @@ public class DualCameraPreviewManager {
 
                             }
                         } else {
-                            frameCallback.onIrFrame(nv21, image.getWidth(), image.getHeight());
+                            if (irNv21Buffer == null || irNv21Buffer.length < needed) {
+                                irNv21Buffer = new byte[needed];
+                            }
+                            convertToNV21(image, irNv21Buffer);
+                            frameCallback.onIrFrame(irNv21Buffer, width, height);
                         }
                     }
 ///                    if(frameCallback != null) {
@@ -305,9 +329,22 @@ public class DualCameraPreviewManager {
                     if (image != null) image.close();
                 }
             }, backgroundHandler);
+            if (isRgb) {
+                imageReaderRGB = imageReader;
 
-            if (isRgb) imageReaderRGB = imageReader;
-            else imageReaderIR = imageReader;
+                int size = previewSize.getWidth() * previewSize.getHeight() * 3 / 2;
+                rgbNv21Buffer = new byte[size];
+
+            } else {
+                imageReaderIR = imageReader;
+
+                int size = previewSize.getWidth() * previewSize.getHeight() * 3 / 2;
+                irNv21Buffer = new byte[size];
+            }
+
+
+///            if (isRgb) imageReaderRGB = imageReader;
+///            else imageReaderIR = imageReader;
 
             List<Surface> surfaces = Arrays.asList(previewSurface, imageReader.getSurface());
             device.createCaptureSession(surfaces, new CameraCaptureSession.StateCallback() {
@@ -337,43 +374,78 @@ public class DualCameraPreviewManager {
         }
     }
 
-    @NonNull
-    private byte[] convertImageToNv21(@NonNull Image image) {
+    private void convertToNV21(@NonNull Image image, byte[] out) {
+        Image.Plane[] planes = image.getPlanes();
+        ByteBuffer y = planes[0].getBuffer();
+        ByteBuffer u = planes[1].getBuffer();
+        ByteBuffer v = planes[2].getBuffer();
+
         int width = image.getWidth();
         int height = image.getHeight();
-        int alignedWidth = (width + 3) / 4 * 4;
-        Image.Plane[] planes = image.getPlanes();
-        byte[] nv21 = new byte[alignedWidth * height * 3 / 2];
 
-        ByteBuffer yBuffer = planes[0].getBuffer();
         int yRowStride = planes[0].getRowStride();
+        int uvRowStride = planes[1].getRowStride();
+        int uvPixelStride = planes[1].getPixelStride();
+
+        int offset = 0;
+
         for (int row = 0; row < height; row++) {
-            yBuffer.position(row * yRowStride);
-            yBuffer.get(nv21, row * alignedWidth, width);
-            for (int i = width; i < alignedWidth; i++) {
-                nv21[row * alignedWidth + i] = 0;
-            }
+            y.position(row * yRowStride);
+            y.get(out, offset, width);
+            offset += width;
         }
 
-        ByteBuffer vBuffer = planes[2].getBuffer();
-        ByteBuffer uBuffer = planes[1].getBuffer();
-        int chromaHeight = height / 2;
-        int chromaWidth = alignedWidth / 2;
-        int nv21Offset = alignedWidth * height;
+        int uvOffset = width * height;
+        for (int row = 0; row < height / 2; row++) {
+            for (int col = 0; col < width / 2; col++) {
+                int index = row * uvRowStride + col * uvPixelStride;
 
-        for (int row = 0; row < chromaHeight; row++) {
-            int vPos = row * planes[2].getRowStride();
-            int uPos = row * planes[1].getRowStride();
-            for (int col = 0; col < chromaWidth; col++) {
-                byte v = vBuffer.get(vPos + col * planes[2].getPixelStride());
-                byte u = uBuffer.get(uPos + col * planes[1].getPixelStride());
-                nv21[nv21Offset++] = v;
-                nv21[nv21Offset++] = u;
+                out[uvOffset++] = v.get(index);
+                out[uvOffset++] = u.get(index);
             }
         }
-
-        return nv21;
     }
+
+
+    /**
+     * //    @NonNull
+     * private byte[] convertImageToNv21(@NonNull Image image) {
+     * int width = image.getWidth();
+     * int height = image.getHeight();
+     * int alignedWidth = (width + 3) / 4 * 4;
+     * Image.Plane[] planes = image.getPlanes();
+     * byte[] nv21 = new byte[alignedWidth * height * 3 / 2];
+     * <p>
+     * ByteBuffer yBuffer = planes[0].getBuffer();
+     * int yRowStride = planes[0].getRowStride();
+     * for (int row = 0; row < height; row++) {
+     * yBuffer.position(row * yRowStride);
+     * yBuffer.get(nv21, row * alignedWidth, width);
+     * for (int i = width; i < alignedWidth; i++) {
+     * nv21[row * alignedWidth + i] = 0;
+     * }
+     * }
+     * <p>
+     * ByteBuffer vBuffer = planes[2].getBuffer();
+     * ByteBuffer uBuffer = planes[1].getBuffer();
+     * int chromaHeight = height / 2;
+     * int chromaWidth = alignedWidth / 2;
+     * int nv21Offset = alignedWidth * height;
+     * <p>
+     * for (int row = 0; row < chromaHeight; row++) {
+     * int vPos = row * planes[2].getRowStride();
+     * int uPos = row * planes[1].getRowStride();
+     * for (int col = 0; col < chromaWidth; col++) {
+     * byte v = vBuffer.get(vPos + col * planes[2].getPixelStride());
+     * byte u = uBuffer.get(uPos + col * planes[1].getPixelStride());
+     * nv21[nv21Offset++] = v;
+     * nv21[nv21Offset++] = u;
+     * }
+     * }
+     * <p>
+     * return nv21;
+     * }
+     */
 
     private boolean detectFaceRGB(byte[] nv21, int width, int height) {
         List<FaceInfo> faceInfoList = new ArrayList<>();
@@ -385,6 +457,7 @@ public class DualCameraPreviewManager {
 
         return !faceInfoList.isEmpty();
     }
+
     private void startBackgroundThread() {
         try {
             backgroundThread = new HandlerThread(ConstantString.DUAL_CAMERA_THREAD);
@@ -395,6 +468,7 @@ public class DualCameraPreviewManager {
             Log.e(TAG, "IllegalThreadStateException " + e.getMessage());
         }
     }
+
     private void stopBackgroundThread() {
         if (backgroundThread != null) {
             backgroundThread.quitSafely();
