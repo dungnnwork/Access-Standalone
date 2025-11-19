@@ -1,6 +1,7 @@
 package com.example.test_pro.ui.face_identity;
 
 import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
@@ -120,6 +121,25 @@ public class FaceIdentityActivity extends AppCompatActivity {
     private final Handler countdownHandler = new Handler(Looper.getMainLooper());
     private Runnable countdownRunnable;
     private int countdownSeconds = 20;
+    private String ramPercent;
+    private final Handler ramHandler = new Handler();
+
+    private final Runnable ramRunnable = new Runnable() {
+        @Override
+        public void run() {
+            Context contextVal = FaceIdentityActivity.this;
+            ramPercent = DeviceUtil.getRamUsed(contextVal);
+
+            isPersonAlive = !isPersonAlive;
+            if (isPersonAlive) {
+                showRgbView();
+            } else {
+                updateText("");
+                hideRgbView();
+            }
+            ramHandler.postDelayed(this, 2000);
+        }
+    };
 
     private void startCountdown() {
         cancelCountdown();
@@ -155,8 +175,8 @@ public class FaceIdentityActivity extends AppCompatActivity {
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     dualCameraPreviewManager = new DualCameraPreviewManager(FaceIdentityActivity.this, textureViewRGB, textureViewIR, new DualCameraPreviewManager.FrameCallback() {
                         @Override
-                        public void onRgbFrame(byte[] nv21Data, int width, int height) {
-                            onPreviewRGBFrame(nv21Data, width, height);
+                        public void onRgbFrame(byte[] nv21Data, int width, int height, List<FaceInfo> faceInfoList) {
+                            onPreviewRGBFrame(nv21Data, width, height, faceInfoList);
                         }
 
                         @Override
@@ -231,11 +251,12 @@ public class FaceIdentityActivity extends AppCompatActivity {
                     new String[]{android.nfc.tech.Ndef.class.getName()}
             };
             nfcAdapter.enableForegroundDispatch(this, pendingIntent, intentFiltersArray, techListsArray);
+            ramHandler.post(ramRunnable);
         }
         dualCameraPreviewManager = new DualCameraPreviewManager(FaceIdentityActivity.this, textureViewRGB, textureViewIR, new DualCameraPreviewManager.FrameCallback() {
             @Override
-            public void onRgbFrame(byte[] nv21Data, int width, int height) {
-                onPreviewRGBFrame(nv21Data, width, height);
+            public void onRgbFrame(byte[] nv21Data, int width, int height, List<FaceInfo> faceInfoList) {
+                onPreviewRGBFrame(nv21Data, width, height, faceInfoList);
             }
 
             @Override
@@ -313,6 +334,7 @@ public class FaceIdentityActivity extends AppCompatActivity {
             nfcAdapter.disableForegroundDispatch(this);
         }
         watchdogHandler.removeCallbacks(watchdogRunnable);
+        if(ramHandler != null) ramHandler.removeCallbacks(ramRunnable);
         releaseCamera();
         cancelCountdown();
     }
@@ -348,13 +370,13 @@ public class FaceIdentityActivity extends AppCompatActivity {
                 Log.d(TAG, "releaseCamera() called, cameraReleased=" + cameraReleased);
             }
         } catch (Exception e) {
-            cameraReleased = false;
             Log.d(TAG, "Exception" + e);
         }
     }
 
     private void updateText(String message) {
-        runOnUiThread(() -> txtStatus.setText(message));
+        String text = DatetimeUtil.nowToString() + "\r\n" + message + "\r\nRamPercent: " + ramPercent + "\r\nisPersonAlive: " + isPersonAlive;
+        runOnUiThread(() -> txtStatus.setText(text));
     }
     private void setupDualCameraLayout(@NonNull FrameLayout frameLayout) {
         frameLayout.setBackgroundColor(Color.BLACK);
@@ -651,20 +673,20 @@ public class FaceIdentityActivity extends AppCompatActivity {
         layoutInfoPanel.addView(card);
     }
 
-    public void onPreviewRGBFrame(byte[] rgbNv21, int width, int height) {
+    public void onPreviewRGBFrame(byte[] rgbNv21, int width, int height, List<FaceInfo> faceInfoList) {
 
         if (!isPersonAlive) return;
         try {
             if (isStop.get() || hasSavedImage.get()) return;
 
-            List<FaceInfo> faceInfoList = new ArrayList<>();
-            int code = FaceUtil.faceDetectEngine.detectFaces(rgbNv21,
-                    width, height, FaceEngine.CP_PAF_NV21, faceInfoList);
-            if (code != ErrorInfo.MOK) {
-                String text = getString(R.string.face_recognition_not_possible) + " " + code;
-                updateText(text);
-                return;
-            }
+//            List<FaceInfo> faceInfoList = new ArrayList<>();
+//            int code = FaceUtil.faceDetectEngine.detectFaces(rgbNv21,
+//                    width, height, FaceEngine.CP_PAF_NV21, faceInfoList);
+//            if (code != ErrorInfo.MOK) {
+//                String text = getString(R.string.face_recognition_not_possible) + " " + code;
+//                updateText(text);
+//                return;
+//            }
 
             if (faceInfoList.isEmpty()) {
                 if (isFaceDetected) {
@@ -692,6 +714,8 @@ public class FaceIdentityActivity extends AppCompatActivity {
                 updateText(text);
                 return;
             }
+
+            Log.d(TAG, "Liveness :" + livenessInfo.getLiveness());
 
             if (livenessInfo.getLiveness() != LivenessInfo.ALIVE) {
                 String text = getString(R.string.failed_to_extract_face);
@@ -905,21 +929,24 @@ public class FaceIdentityActivity extends AppCompatActivity {
                 FaceEngine.CP_PAF_NV21, faceInfoList, FaceEngine.ASF_IR_LIVENESS);
         List<LivenessInfo> irLivenessList = new ArrayList<>();
         FaceUtil.faceLiveNessEngine.getIrLiveness(irLivenessList);
-
-        if (!irLivenessList.isEmpty()) {
+        if(!irLivenessList.isEmpty()) {
             livenessInfo = irLivenessList.get(0);
-            if (!isPersonAlive) {
-                showRgbView();
-                isPersonAlive = true;
-                Log.d(TAG, "Person detected → show RGB view");
-            }
-        } else {
-            if (isPersonAlive) {
-                hideRgbView();
-                isPersonAlive = false;
-                Log.d(TAG, "No real person → hide RGB view");
-            }
         }
+
+///        if (!irLivenessList.isEmpty()) {
+//            livenessInfo = irLivenessList.get(0);
+//            if (!isPersonAlive) {
+//                showRgbView();
+//                isPersonAlive = true;
+//                Log.d(TAG, "Person detected → show RGB view");
+//            }
+//        } else {
+//            if (isPersonAlive) {
+//                hideRgbView();
+//                isPersonAlive = false;
+//                Log.d(TAG, "No real person → hide RGB view");
+//            }
+///        }
     }
 
     private void showRgbView() {

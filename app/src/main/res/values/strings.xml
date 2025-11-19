@@ -130,4 +130,5 @@
     <string name="login_successful">Login successful</string>
     <string name="login_failed">Login failed</string>
     <string name="restart_camera">Restarting camera\nPlease wait</string>
+    <string name="no_real_person_hide_rgb_view">No real person → hide RGB view</string>
 </resources>

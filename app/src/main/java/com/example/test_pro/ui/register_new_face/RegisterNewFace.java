@@ -8,7 +8,6 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Rect;
-import android.hardware.Camera;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -38,8 +37,6 @@ import com.arcsoft.face.MaskInfo;
 import com.arcsoft.face.enums.ExtractType;
 import com.common.pos.api.util.PosUtil;
 import com.example.test_pro.R;
-import com.example.test_pro.camera.CameraListener;
-import com.example.test_pro.camera.CameraPreview;
 import com.example.test_pro.camera.DualCameraPreviewManager;
 import com.example.test_pro.common.constants.ConstantString;
 import com.example.test_pro.common.constants.NumericConstants;
@@ -66,20 +63,15 @@ import java.util.List;
 import java.util.UUID;
 
 public class RegisterNewFace extends AppCompatActivity {
-    private CameraListener cameraListenerRGB;
     LivenessInfo livenessInfo = new LivenessInfo();
-    private CameraListener cameraListenerIr;
     private boolean isStop = false;
     private TextView txtStatus;
-    CameraPreview preview;
-    CameraPreview previewIr;
     private Runnable timerTask;
     private int returnTime = 10;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean cameraReleased = false;
     private boolean turnOffLed = false;
     private DualCameraPreviewManager dualCameraPreviewManager;
-    private final boolean isDualCamera = true;
     private DatabaseLocal db;
     private final String TAG = "REGISTER_NEW_FACE";
 
@@ -87,9 +79,7 @@ public class RegisterNewFace extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         db = DatabaseLocal.getInstance(this);
-        if(!isDualCamera) {
-            initCameraListener();
-        }
+        Log.d(TAG, "Camera " + cameraReleased);
         layoutScreen();
 //        setupCameraAsyncFaceID();
     }
@@ -97,20 +87,20 @@ public class RegisterNewFace extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        PosUtil.setLedLight(255);
+//        PosUtil.setLedLight(255);
         startTimerHome(this);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        releaseCamera();
         turnOffControlLed();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        releaseCamera();
         cancelTimers();
     }
 
@@ -123,45 +113,14 @@ public class RegisterNewFace extends AppCompatActivity {
     }
 
     private void turnOffControlLed() {
-        if(turnOffLed) return;
+        if (turnOffLed) return;
         turnOffLed = true;
-        PosUtil.setLedLight(0);
+//        PosUtil.setLedLight(0);
     }
 
     private void layoutScreen() {
-        if(isDualCamera) {
-            setupDualCameraLayout();
-        } else {
-            setupCameraAsyncFaceID();
-        }
+        setupDualCameraLayout();
     }
-    private void setupCameraAsyncFaceID() {
-        FrameLayout frameLayout = new FrameLayout(this);
-
-        previewIr = new CameraPreview(this, 1, cameraListenerIr);
-        preview = new CameraPreview(this, 0, cameraListenerRGB);
-        FaceDetectionOverlay faceOverlay = new FaceDetectionOverlay(this);
-        txtStatus = new TextView(this);
-
-        txtStatus.setTextSize(20);
-        txtStatus.setTextColor(Color.WHITE);
-        txtStatus.setGravity(Gravity.CENTER);
-
-        FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-        );
-        textParams.gravity = Gravity.TOP;
-        textParams.topMargin = SizeUtils.getHeightPercent(0.1f);
-
-        frameLayout.addView(previewIr);
-        frameLayout.addView(preview);
-        frameLayout.addView(faceOverlay);
-        frameLayout.addView(txtStatus, textParams);
-
-        setContentView(frameLayout);
-    }
-
     private void setupDualCameraLayout() {
         FrameLayout frameLayout = new FrameLayout(this);
         frameLayout.setBackgroundColor(Color.BLACK);
@@ -212,8 +171,8 @@ public class RegisterNewFace extends AppCompatActivity {
         setContentView(frameLayout);
         dualCameraPreviewManager = new DualCameraPreviewManager(RegisterNewFace.this, textureViewRGB, textureViewIR, new DualCameraPreviewManager.FrameCallback() {
             @Override
-            public void onRgbFrame(byte[] nv21Data, int width, int height) {
-                onPreviewRGBFrame(nv21Data, width, height);
+            public void onRgbFrame(byte[] nv21Data, int width, int height, List<FaceInfo> faceInfoList) {
+                onPreviewRGBFrame(nv21Data, width, height, faceInfoList);
             }
 
             @Override
@@ -280,86 +239,21 @@ public class RegisterNewFace extends AppCompatActivity {
     }
 
     private void releaseCamera() {
+        Log.d(TAG, "releaseCamera " + cameraReleased);
         if (cameraReleased) return;
         cameraReleased = true;
-        if(isDualCamera) {
-            Log.i(TAG, "Start release ");
-            if(dualCameraPreviewManager != null) {
-                dualCameraPreviewManager.stop();
-                dualCameraPreviewManager = null;
-                Log.i(TAG, "Start release success");
-                return;
-            }
+        Log.i(TAG, "Start release ");
+        if (dualCameraPreviewManager != null) {
+            dualCameraPreviewManager.stop();
+            dualCameraPreviewManager = null;
+            Log.i(TAG, "Release success ");
         }
-        try {
-            if (previewIr != null) {
-                previewIr.releaseCamera();
-            }
-            previewIr = null;
 
-            if (preview != null) {
-                preview.releaseCamera();
-            }
-
-            preview = null;
-            Log.i(TAG, "Both cameras released (UI thread)");
-        } catch (Exception e) {
-            db.insertLogApp(new LogAppModel(UUID.randomUUID().toString(), "releaseCamera_register_new_face_act", e.toString(), DatetimeUtil.nowToString()));
-            Log.e(TAG, "Exception", e);
-        }
     }
-
-    private void initCameraListener() {
-        initRGBCameraListener(this);
-        initIRCameraListener(this);
-    }
-
-    @SuppressWarnings("deprecation")
-    private void initRGBCameraListener(Context context) {
-        cameraListenerRGB = new CameraListener() {
-            @Override
-            public void onPreview(final byte[] nv21, Camera camera) {
-                onPreviewRGBFrame(nv21, CameraPreview.width, CameraPreview.height);
-            }
-
-            @Override
-            public void onCameraError(Exception e) {
-                Log.i(TAG, "onCameraErrorRGB: ", e);
-                ToastUtil.show(context, getString(R.string.open_failed_camera));
-            }
-
-        };
-    }
-
-    @SuppressWarnings("deprecation")
-    private void initIRCameraListener(Context context) {
-        cameraListenerIr = new CameraListener() {
-
-            @Override
-            public void onPreview(final byte[] nv21, Camera camera) {
-                onPreviewIrFrame(nv21, CameraPreview.width, CameraPreview.height);
-            }
-
-            @Override
-            public void onCameraError(Exception e) {
-                Log.i(TAG, "onCameraErrorIR: ", e);
-                ToastUtil.show(context, getString(R.string.open_failed_camera));
-            }
-
-        };
-    }
-
-    public void onPreviewRGBFrame(byte[] rgbNv21, int width, int height) {
+    public void onPreviewRGBFrame(byte[] rgbNv21, int width, int height, List<FaceInfo> faceInfoList) {
         try {
             if (isStop) return;
-            List<FaceInfo> faceInfoList = new ArrayList<>();
-            int code = FaceUtil.faceDetectEngine.detectFaces(rgbNv21,
-                    width, height, FaceEngine.CP_PAF_NV21, faceInfoList);
-            if (code != ErrorInfo.MOK) {
-                String text = getString(R.string.face_recognition_not_possible) + " " + code;
-                txtStatus.setText(text);
-                return;
-            }
+
             if (faceInfoList.isEmpty()) {
                 String text = getString(R.string.no_person_in_recognition);
                 txtStatus.setText(text);
@@ -484,13 +378,13 @@ public class RegisterNewFace extends AppCompatActivity {
     }
 
     private void intentAddNewEmployee(@NonNull FaceFeature faceFeature, byte[] nv21, FaceInfo faceInfo, int width, int height) {
-        DatabaseLocal db = DatabaseLocal.getInstance(this);
-        FaceFeatureModel faceFeatureModel = db.findFaceIdentity(faceFeature);
-        if(faceFeatureModel != null) {
-            DialogUtil.showResultDialog(R.drawable.failed, getString(R.string.registered), this, false, this::finish);
-            SoundHelper.playSound(this, SoundHelper.EmSound.HAS_REGISTER_BEFORE);
-            return;
-        }
+//        DatabaseLocal db = DatabaseLocal.getInstance(this);
+//        FaceFeatureModel faceFeatureModel = db.findFaceIdentity(faceFeature);
+//        if(faceFeatureModel != null) {
+//            DialogUtil.showResultDialog(R.drawable.failed, getString(R.string.registered), this, false, this::finish);
+//            SoundHelper.playSound(this, SoundHelper.EmSound.HAS_REGISTER_BEFORE);
+//            return;
+//        }
         try {
             String filePath = saveHeadImageToFile(nv21, faceInfo, width, height);
             Intent intent = new Intent(RegisterNewFace.this, AddNewMemberActivity.class);
@@ -498,7 +392,7 @@ public class RegisterNewFace extends AppCompatActivity {
             intent.putExtra(ConstantString.BYTE_FACE, faceFeature.getFeatureData());
             startActivity(intent);
             finish();
-        } catch ( IOException | NullPointerException | SecurityException e) {
+        } catch (IOException | NullPointerException | SecurityException e) {
             db.insertLogApp(new LogAppModel(UUID.randomUUID().toString(), "intentAddNewEmployee_register_new_face_act", e.toString(), DatetimeUtil.nowToString()));
             DialogUtil.showResultDialog(R.drawable.failed, getString(R.string.an_error_try_again), this, false, null);
         }
@@ -519,7 +413,7 @@ public class RegisterNewFace extends AppCompatActivity {
                     faceInfoList, FaceEngine.ASF_IR_LIVENESS);
             List<LivenessInfo> irLivenessInfoList = new ArrayList<>();
             FaceUtil.faceLiveNessEngine.getIrLiveness(irLivenessInfoList);
-            if(!irLivenessInfoList.isEmpty()) {
+            if (!irLivenessInfoList.isEmpty()) {
                 livenessInfo = irLivenessInfoList.get(0);
             }
         } catch (IllegalArgumentException e) {
